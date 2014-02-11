@@ -1,6 +1,7 @@
 $icon-font-path: "/bower_components/sass-bootstrap/fonts/";
 
 @import 'sass-bootstrap/lib/bootstrap';
+@import "compass/css3/border-radius";
 
 .browsehappy {
     margin: 0.2em 0;
@@ -88,4 +89,70 @@ body {
     .jumbotron {
         border-bottom: 0;
     }
+}
+
+
+
+
+
+
+.app {
+    padding: 15px;
+    background: #F0EEF0;
+    border: 1px solid rgb(194, 194, 194);
+    @include border-radius(6px);
+
+    .new-todo-input {
+        font-family: inherit;
+        font-size: 23px;
+        line-height: inherit;
+        width: 100%;
+        padding: 20px 10px;
+        color: #616161;
+        border: 1px solid #acacac;
+        @include border-radius(6px 6px 0 0);
+    }
+
+    .add-todo {
+        padding: 10px;
+        color: #fff;
+        background: #428bca;
+        @include border-radius(0 6px 0 0);
+    }
+
+    .todo-items {
+        background: #fff;
+        border: 1px solid #acacac;
+        border-top: none;
+        @include border-radius(0 0 6px 6px);
+
+    .todo-item {
+        font-size: 18px;
+        border-top: 1px solid #acacac;
+        padding: 15px;
+
+        &:first-child {
+            border: none;
+        }
+
+        .description {
+            width: 55%;
+            display: inline-block;
+
+            .id {
+                color: rgb(160, 160, 160);
+            } 
+
+            &.completed {
+            text-decoration: line-through;
+            }  
+        }
+
+        
+
+        button {
+            vertical-align: top;
+        }
+    }
+  }
 }
