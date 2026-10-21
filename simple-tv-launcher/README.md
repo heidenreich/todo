@@ -5,12 +5,12 @@ One row of big tiles for the apps you use, a clock, and nothing else: no ads, no
 network access, about 25 KB.
 
 First run shows Prime Video, YouTube TV, Apple TV and HBO Max (whichever are installed),
-then **Add app** and **Settings**.
+with **Add app** and **Settings** as small buttons along the bottom.
 
 - **OK** on a tile opens the app.
 - **Hold OK** on a tile to move it left/right or remove it.
-- **Add app** lists every installed app.
-- **Settings** opens Fire TV settings, the Amazon home screen (for the app store and
+- **Add app** (bottom) lists every installed app.
+- **Settings** (bottom) opens Fire TV settings, the Amazon home screen (for the app store and
   updates), or the Home button setup.
 
 ## Install on the TV

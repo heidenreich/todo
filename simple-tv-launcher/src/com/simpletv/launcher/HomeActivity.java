@@ -62,6 +62,7 @@ public class HomeActivity extends Activity {
     private LinearLayout row;
     private TextView clock;
     private TextView notice;
+    private TextView addButton;
     private List<String> apps;
     private int focusIndex;
 
@@ -93,18 +94,7 @@ public class HomeActivity extends Activity {
                 FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER));
 
-        notice = new TextView(this);
-        notice.setText("Home button not set up yet. Press here to turn on \"Simple TV Home Button\".");
-        notice.setTextColor(Color.WHITE);
-        notice.setTextSize(18);
-        notice.setPadding(dp(20), dp(12), dp(20), dp(12));
-        notice.setFocusable(true);
-        notice.setBackground(tileBackground(false));
-        notice.setOnFocusChangeListener(new View.OnFocusChangeListener() {
-            @Override public void onFocusChange(View v, boolean hasFocus) {
-                v.setBackground(tileBackground(hasFocus));
-            }
-        });
+        notice = makeButton("Home button not set up yet. Press here to turn it on.");
         notice.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 openAccessibilitySettings();
@@ -112,11 +102,53 @@ public class HomeActivity extends Activity {
         });
         FrameLayout.LayoutParams noticeLp = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
-        noticeLp.setMargins(0, 0, 0, dp(48));
+                Gravity.TOP | Gravity.START);
+        noticeLp.setMargins(dp(48), dp(28), 0, 0);
         root.addView(notice, noticeLp);
 
+        LinearLayout bottomBar = new LinearLayout(this);
+        bottomBar.setOrientation(LinearLayout.HORIZONTAL);
+        addButton = makeButton("+  Add app");
+        addButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                showAddMenu();
+            }
+        });
+        TextView settingsButton = makeButton("Settings");
+        settingsButton.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                showSettingsMenu();
+            }
+        });
+        LinearLayout.LayoutParams buttonLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        buttonLp.setMargins(dp(12), 0, dp(12), 0);
+        bottomBar.addView(addButton, buttonLp);
+        bottomBar.addView(settingsButton, buttonLp);
+        FrameLayout.LayoutParams barLp = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        barLp.setMargins(0, 0, 0, dp(40));
+        root.addView(bottomBar, barLp);
+
         setContentView(root);
+    }
+
+    private TextView makeButton(String label) {
+        TextView button = new TextView(this);
+        button.setText(label);
+        button.setTextColor(Color.WHITE);
+        button.setTextSize(16);
+        button.setPadding(dp(20), dp(10), dp(20), dp(10));
+        button.setFocusable(true);
+        button.setClickable(true);
+        button.setBackground(tileBackground(false));
+        button.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+            @Override public void onFocusChange(View v, boolean hasFocus) {
+                v.setBackground(tileBackground(hasFocus));
+            }
+        });
+        return button;
     }
 
     @Override
@@ -152,10 +184,14 @@ public class HomeActivity extends Activity {
     private void buildTiles() {
         row.removeAllViews();
         PackageManager pm = getPackageManager();
+        // Fit every tile on screen: split the width between them, capped at 256dp.
+        float density = getResources().getDisplayMetrics().density;
+        int screenDp = (int) (getResources().getDisplayMetrics().widthPixels / density);
+        int tileDp = Math.min(256, (screenDp - 96) / Math.max(apps.size(), 1) - 44);
         for (int i = 0; i < apps.size(); i++) {
             final int index = i;
             final String pkg = apps.get(i);
-            View tile = makeTile(appArt(pm, pkg), appLabel(pm, pkg));
+            View tile = makeTile(appArt(pm, pkg), appLabel(pm, pkg), tileDp);
             tile.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) {
                     focusIndex = index;
@@ -172,29 +208,15 @@ public class HomeActivity extends Activity {
             row.addView(tile);
         }
 
-        View add = makeTile(getDrawable(android.R.drawable.ic_input_add), "Add app");
-        add.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) {
-                focusIndex = apps.size();
-                showAddMenu();
-            }
-        });
-        row.addView(add);
-
-        View settings = makeTile(getDrawable(android.R.drawable.ic_menu_preferences), "Settings");
-        settings.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) {
-                focusIndex = apps.size() + 1;
-                showSettingsMenu();
-            }
-        });
-        row.addView(settings);
-
-        focusIndex = Math.min(focusIndex, row.getChildCount() - 1);
-        row.getChildAt(focusIndex).requestFocus();
+        if (apps.isEmpty()) {
+            addButton.requestFocus();
+        } else {
+            focusIndex = Math.min(focusIndex, apps.size() - 1);
+            row.getChildAt(focusIndex).requestFocus();
+        }
     }
 
-    private View makeTile(Drawable art, String label) {
+    private View makeTile(Drawable art, String label, int widthDp) {
         LinearLayout tile = new LinearLayout(this);
         tile.setOrientation(LinearLayout.VERTICAL);
         tile.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -207,8 +229,8 @@ public class HomeActivity extends Activity {
         image.setImageDrawable(art);
         boolean isBanner = art != null && art.getIntrinsicWidth() > art.getIntrinsicHeight();
         image.setScaleType(isBanner ? ImageView.ScaleType.FIT_XY : ImageView.ScaleType.FIT_CENTER);
-        if (!isBanner) image.setPadding(dp(40), dp(40), dp(40), dp(40));
-        tile.addView(image, new LinearLayout.LayoutParams(dp(256), dp(144)));
+        if (!isBanner) image.setPadding(dp(widthDp / 6), dp(widthDp / 6), dp(widthDp / 6), dp(widthDp / 6));
+        tile.addView(image, new LinearLayout.LayoutParams(dp(widthDp), dp(widthDp * 9 / 16)));
 
         TextView text = new TextView(this);
         text.setText(label);
@@ -218,7 +240,7 @@ public class HomeActivity extends Activity {
         text.setEllipsize(TextUtils.TruncateAt.END);
         text.setGravity(Gravity.CENTER);
         text.setPadding(0, dp(8), 0, dp(4));
-        tile.addView(text, new LinearLayout.LayoutParams(dp(256), LinearLayout.LayoutParams.WRAP_CONTENT));
+        tile.addView(text, new LinearLayout.LayoutParams(dp(widthDp), LinearLayout.LayoutParams.WRAP_CONTENT));
 
         tile.setOnFocusChangeListener(new View.OnFocusChangeListener() {
             @Override public void onFocusChange(View v, boolean hasFocus) {
