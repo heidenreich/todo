@@ -1,8 +1,8 @@
 # Simple TV
 
 A minimal home screen for an old Fire TV (built for a Toshiba Fire TV Edition set).
-One row of big tiles for the apps you use, a clock, and nothing else: no ads, no
-network access, about 25 KB.
+One row of big tiles for the apps you use and a clock, over rotating national park
+photos. No ads, no accounts, about 35 KB.
 
 First run shows Prime Video, YouTube TV, Apple TV and HBO Max (whichever are installed),
 with **Add app** and **Settings** as small buttons along the bottom.
@@ -12,6 +12,15 @@ with **Add app** and **Settings** as small buttons along the bottom.
 - **Add app** (bottom) lists every installed app.
 - **Settings** (bottom) opens Fire TV settings, the Amazon home screen (for the app store and
   updates), or the Home button setup.
+
+## Background photos
+
+Once a week Simple TV downloads about 30 wide photos from Wikimedia Commons'
+"Featured pictures" of 22 well-known national parks and keeps them on the TV. The photo
+changes every 5 minutes and each time you come back from an app. The park and
+photographer are credited bottom-left, as the photos' licenses require. This is the
+app's only internet use. With no internet it uses the photos it already has, or a plain
+dark background. The park list is `PARKS` in `BackgroundPhotos.java`.
 
 ## Install on the TV
 

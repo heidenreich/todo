@@ -10,6 +10,7 @@ import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -59,6 +60,24 @@ public class HomeActivity extends Activity {
         }
     };
 
+    private static final long PHOTO_MS = 5 * 60_000;
+
+    private final Runnable nextPhoto = new Runnable() {
+        @Override public void run() {
+            photos.showNext(getResources().getDisplayMetrics().widthPixels,
+                    getResources().getDisplayMetrics().heightPixels,
+                    new BackgroundPhotos.Callback() {
+                        @Override public void onPhoto(Bitmap bitmap, String caption) {
+                            showPhoto(bitmap, caption);
+                        }
+                    });
+            handler.postDelayed(this, PHOTO_MS);
+        }
+    };
+
+    private final ImageView[] backgrounds = new ImageView[2];
+    private TextView photoCaption;
+    private BackgroundPhotos photos;
     private LinearLayout row;
     private TextView clock;
     private TextView notice;
@@ -73,8 +92,36 @@ public class HomeActivity extends Activity {
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.rgb(12, 14, 18));
 
+        // Background photo: two layers so a new photo can fade in over the old one.
+        for (int i = 0; i < backgrounds.length; i++) {
+            backgrounds[i] = new ImageView(this);
+            backgrounds[i].setScaleType(ImageView.ScaleType.CENTER_CROP);
+            root.addView(backgrounds[i], new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        }
+        backgrounds[1].setAlpha(0f);
+        // Darken the photo, most at the top and bottom, so the clock and buttons stay readable.
+        View tint = new View(this);
+        tint.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[] {0x99000000, 0x4D000000, 0x4D000000, 0xB3000000}));
+        root.addView(tint, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        photoCaption = new TextView(this);
+        photoCaption.setTextColor(0xCCFFFFFF);
+        photoCaption.setTextSize(12);
+        photoCaption.setShadowLayer(4, 0, 1, Color.BLACK);
+        photoCaption.setSingleLine(true);
+        photoCaption.setEllipsize(TextUtils.TruncateAt.END);
+        FrameLayout.LayoutParams captionLp = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM | Gravity.START);
+        captionLp.setMargins(dp(48), 0, dp(48), dp(10));
+        root.addView(photoCaption, captionLp);
+
         clock = new TextView(this);
-        clock.setTextColor(Color.rgb(200, 200, 200));
+        clock.setTextColor(Color.rgb(230, 230, 230));
+        clock.setShadowLayer(6, 0, 2, Color.BLACK);
         clock.setTextSize(28);
         FrameLayout.LayoutParams clockLp = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
@@ -132,6 +179,29 @@ public class HomeActivity extends Activity {
         root.addView(bottomBar, barLp);
 
         setContentView(root);
+        photos = new BackgroundPhotos(this);
+    }
+
+    private void showPhoto(Bitmap bitmap, String caption) {
+        final ImageView bottom = backgrounds[0];
+        final ImageView top = backgrounds[1];
+        top.animate().cancel();
+        if (top.getAlpha() < 0.5f) {
+            top.setImageBitmap(bitmap);
+            top.animate().alpha(1f).setDuration(1500).withEndAction(new Runnable() {
+                @Override public void run() {
+                    bottom.setImageDrawable(null);
+                }
+            }).start();
+        } else {
+            bottom.setImageBitmap(bitmap);
+            top.animate().alpha(0f).setDuration(1500).withEndAction(new Runnable() {
+                @Override public void run() {
+                    top.setImageDrawable(null);
+                }
+            }).start();
+        }
+        photoCaption.setText(caption);
     }
 
     private TextView makeButton(String label) {
@@ -158,12 +228,15 @@ public class HomeActivity extends Activity {
         buildTiles();
         notice.setVisibility(HomeButtonService.isEnabled(this) ? View.GONE : View.VISIBLE);
         handler.post(clockTick);
+        // A new photo each time you come back, then every few minutes.
+        handler.post(nextPhoto);
     }
 
     @Override
     protected void onPause() {
         super.onPause();
         handler.removeCallbacks(clockTick);
+        handler.removeCallbacks(nextPhoto);
     }
 
     @Override
