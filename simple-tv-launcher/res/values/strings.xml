@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Simple TV</string>
+    <string name="service_name">Simple TV Home Button</string>
+    <string name="service_description">Sends the remote\'s Home button to Simple TV instead of the Amazon home screen.</string>
+</resources>
