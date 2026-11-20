@@ -1,0 +1,624 @@
+<title>Glowswarm</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Nunito:wght@500;700&display=swap">
+<style>
+/* Layout: one portrait play field centred on a night sky; menus float over the live game. */
+:root {
+  color-scheme: dark;
+  --night: #140f2b;
+  --night-2: #2a1f55;
+  --path: #3b2f73;
+  --glow: #ffc53d;
+  --good: #3fe0b8;
+  --bad: #ff5d73;
+  --ink: #f6f0ff;
+  --ink-dim: #b9add9;
+  --display: "Baloo 2", "Trebuchet MS", system-ui, sans-serif;
+  --body: "Nunito", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  background: var(--night);
+  color: var(--ink);
+  font-family: var(--body);
+  display: flex;
+  justify-content: center;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 12px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+#stage {
+  position: relative;
+  width: 100%;
+  max-width: 480px;
+  height: 100%;
+  min-height: 0;
+  border-radius: 20px;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+}
+#game { display: block; width: 100%; height: 100%; }
+.panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
+  background: radial-gradient(ellipse at 50% 45%, rgba(20, 15, 43, 0.55), rgba(20, 15, 43, 0.9));
+  cursor: default;
+}
+.panel h1 {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(2.6rem, 13vw, 4rem);
+  line-height: 0.95;
+  margin: 0;
+  color: var(--glow);
+  text-shadow: 0 0 28px rgba(255, 197, 61, 0.55);
+  text-wrap: balance;
+}
+.panel h1.small { font-size: clamp(2rem, 10vw, 2.8rem); }
+.panel p {
+  margin: 0;
+  max-width: 30ch;
+  font-size: 1.02rem;
+  line-height: 1.45;
+  color: var(--ink-dim);
+}
+.panel p strong { color: var(--ink); }
+.legend {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 12px;
+  text-align: left;
+  font-size: 0.95rem;
+  color: var(--ink-dim);
+  max-width: 300px;
+}
+.legend b {
+  font-family: var(--display);
+  font-weight: 800;
+  min-width: 3.2em;
+  text-align: center;
+  border-radius: 8px;
+  padding: 0 8px;
+  color: var(--night);
+}
+.legend .g { background: var(--good); }
+.legend .b { background: var(--bad); }
+.legend .l { background: var(--glow); }
+button.go {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 1.5rem;
+  color: var(--night);
+  background: var(--glow);
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 44px;
+  margin-top: 6px;
+  cursor: pointer;
+  box-shadow: 0 6px 0 #b9831a, 0 0 34px rgba(255, 197, 61, 0.45);
+}
+button.go:active { transform: translateY(4px); box-shadow: 0 2px 0 #b9831a; }
+button.go:focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
+.best { font-size: 0.9rem; color: var(--ink-dim); }
+</style>
+
+<div id="stage">
+  <canvas id="game" aria-label="Glowswarm game field"></canvas>
+
+  <div class="panel" id="menu">
+    <h1>Glowswarm</h1>
+    <p>Lead your fireflies down the night path. <strong>Drag or use the arrow keys</strong> to steer. They fire sparks on their own.</p>
+    <div class="legend">
+      <b class="g">+5</b><span>Fly through to grow the swarm. Shoot a gate to raise its number.</span>
+      <b class="b">−3</b><span>Costs fireflies, unless you shoot it up first.</span>
+      <b class="l">24</b><span>Light a lantern with that many sparks for an upgrade.</span>
+    </div>
+    <button class="go" id="playBtn" type="button">Play</button>
+    <div class="best" id="bestLine"></div>
+  </div>
+
+  <div class="panel" id="clear" hidden>
+    <h1 class="small">Night cleared</h1>
+    <p id="clearLine"></p>
+    <button class="go" id="nextBtn" type="button">Next night</button>
+  </div>
+
+  <div class="panel" id="over" hidden>
+    <h1 class="small">The swarm went dark</h1>
+    <p id="overLine"></p>
+    <button class="go" id="retryBtn" type="button">Try again</button>
+  </div>
+</div>
+
+<script>
+(() => {
+  const stage = document.getElementById('stage');
+  const cv = document.getElementById('game');
+  const ctx = cv.getContext('2d');
+  const $ = id => document.getElementById(id);
+
+  const C = { glow: '#ffc53d', good: '#3fe0b8', bad: '#ff5d73', ink: '#f6f0ff', night: '#140f2b' };
+  const K = 0.06, SPEED = 8.5, RANGE = 42, FAR = 62;
+  let W = 400, H = 700, U = 160, hy = 100, by = 600;
+
+  function resize() {
+    const r = stage.getBoundingClientRect();
+    W = Math.max(200, r.width); H = Math.max(300, r.height);
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    U = Math.min(W * 0.44, H * 0.3); hy = H * 0.15; by = H * 0.84;
+  }
+  new ResizeObserver(resize).observe(stage);
+  resize();
+
+  const proj = (x, z) => {
+    const s = 1 / (1 + z * K);
+    return { x: W / 2 + x * U * s, y: hy + (by - hy) * s, s };
+  };
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const irnd = (a, b) => Math.floor(rnd(a, b + 1));
+  const font = (px, w = 800) => `${w} ${Math.max(8, px)}px "Baloo 2", "Trebuchet MS", system-ui, sans-serif`;
+
+  // Glow sprite reused for fireflies, sparks and roadside lights.
+  function glowSprite(rgb) {
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const g = c.getContext('2d');
+    const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, `rgba(255,255,255,1)`);
+    gr.addColorStop(0.18, `rgba(${rgb},0.95)`);
+    gr.addColorStop(0.5, `rgba(${rgb},0.28)`);
+    gr.addColorStop(1, `rgba(${rgb},0)`);
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    return c;
+  }
+  const SPR = { amber: glowSprite('255,197,61'), teal: glowSprite('63,224,184'), pink: glowSprite('255,93,115') };
+  const stars = Array.from({ length: 60 }, () => ({ x: Math.random(), y: Math.random() * 0.3, r: rnd(0.5, 1.6), p: rnd(0, 6) }));
+
+  const S = {
+    mode: 'menu', level: 1, count: 3, rate: 1, dmg: 1, px: 0, tx: 0,
+    objs: [], bullets: [], parts: [], texts: [], boss: null, bossStart: 1,
+    shotAcc: 0, drain: 0, time: 0, scroll: 0, flash: 0, peak: 3
+  };
+  let best = 1;
+  try { best = parseInt(localStorage.getItem('glowswarm.best') || '1', 10) || 1; } catch (e) {}
+  const saveBest = () => { try { localStorage.setItem('glowswarm.best', String(best)); } catch (e) {} };
+  const showBest = () => { $('bestLine').textContent = best > 1 ? `Furthest night reached: ${best}` : ''; };
+  showBest();
+
+  const squadR = () => Math.min(0.34, 0.06 + 0.034 * Math.sqrt(S.count));
+
+  function buildLevel(L) {
+    const m = 1 + 0.28 * (L - 1);
+    const objs = [];
+    let z = 36;
+    const rows = 8 + Math.min(L, 5);
+    const rewards = ['rate', 'dmg', 'bees'];
+    for (let i = 0; i < rows; i++) {
+      const kind = i % 3;
+      if (kind === 0) {
+        const goodLeft = Math.random() < 0.5;
+        const good = (i >= 3 && Math.random() < 0.3)
+          ? { op: 'mul', v: 2 }
+          : { op: 'add', v: irnd(3, 6 + i) };
+        const other = { op: 'add', v: Math.random() < 0.55 ? -irnd(2, 4 + i) : irnd(1, 2) };
+        const [a, b] = goodLeft ? [good, other] : [other, good];
+        objs.push({ t: 'gate', z, x0: -1, x1: 0, charge: 0, ...a });
+        objs.push({ t: 'gate', z, x0: 0, x1: 1, charge: 0, ...b });
+        z += 30;
+      } else if (kind === 1) {
+        const side = Math.random() < 0.5 ? -1 : 1;
+        const hp = Math.round((14 + i * 9) * m);
+        const reward = rewards[(i + L) % 3];
+        objs.push({ t: 'lantern', z, x: side * 0.5, hp, max: hp, reward, n: irnd(5, 8) + i });
+        objs.push({ t: 'gate', z, x0: side > 0 ? -1 : 0, x1: side > 0 ? 0 : 1, charge: 0, op: 'add', v: irnd(1, 3) });
+        z += 30;
+      } else {
+        const n = Math.round((12 + i * 5) * m);
+        const cols = 8, hp = 1 + Math.floor((L - 1) / 3);
+        for (let k = 0; k < n; k++) {
+          objs.push({
+            t: 'moth', hp, ph: rnd(0, 6),
+            x: -0.84 + (k % cols) * (1.68 / (cols - 1)) + rnd(-0.04, 0.04),
+            z: z + Math.floor(k / cols) * 1.15 + rnd(-0.2, 0.2)
+          });
+        }
+        z += 26 + Math.ceil(n / cols) * 1.15;
+      }
+    }
+    const bhp = Math.round((170 + 130 * L) * m);
+    const boss = { t: 'boss', z: z + 22, x: 0, hp: bhp, max: bhp, spawn: 2, ph: 0 };
+    objs.push(boss);
+    S.objs = objs; S.boss = boss; S.bossStart = boss.z;
+  }
+
+  function startLevel(L) {
+    S.level = L; S.count = 3; S.rate = 1; S.dmg = 1; S.peak = 3;
+    S.px = 0; S.tx = 0; S.bullets = []; S.parts = []; S.texts = [];
+    S.shotAcc = 0; S.drain = 0; S.flash = 0;
+    buildLevel(L);
+    S.mode = 'play';
+    $('menu').hidden = true; $('clear').hidden = true; $('over').hidden = true;
+  }
+
+  function endLevel(won) {
+    if (S.mode !== 'play') return;
+    if (won) {
+      S.mode = 'clear';
+      best = Math.max(best, S.level + 1); saveBest();
+      $('clearLine').innerHTML = `Night ${S.level} is safe. Your swarm peaked at <strong>${S.peak}</strong> fireflies.`;
+      setTimeout(() => { $('clear').hidden = false; $('nextBtn').focus(); }, 900);
+    } else {
+      S.mode = 'over';
+      $('overLine').innerHTML = `You reached night <strong>${S.level}</strong> with a peak swarm of <strong>${S.peak}</strong>.`;
+      setTimeout(() => { $('over').hidden = false; $('retryBtn').focus(); }, 700);
+    }
+  }
+
+  function burst(x, z, color, n) {
+    const p = proj(x, z);
+    for (let i = 0; i < n; i++) {
+      const a = rnd(0, 6.283), v = rnd(30, 150) * p.s;
+      S.parts.push({ x: p.x, y: p.y - 10 * p.s, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 40 * p.s, life: rnd(0.25, 0.6), color });
+    }
+  }
+  const say = (x, z, txt, color) => S.texts.push({ x, z, txt, color, t: 0 });
+
+  function loseBees(n) {
+    S.count = Math.max(0, S.count - n);
+    S.flash = 0.25;
+    if (S.count <= 0) { burst(S.px, 0, 'amber', 30); endLevel(false); }
+  }
+  function gainBees(n) { S.count = Math.min(999, S.count + n); S.peak = Math.max(S.peak, S.count); }
+
+  function hit(o, b) {
+    if (o.t === 'moth') {
+      o.hp -= b.d;
+      if (o.hp <= 0) { o.dead = true; burst(o.x, o.z, 'pink', 5); }
+    } else if (o.t === 'lantern') {
+      o.hp -= b.d;
+      if (o.hp <= 0) {
+        o.dead = true; burst(o.x, o.z, 'amber', 26);
+        if (o.reward === 'rate') { S.rate *= 1.3; say(o.x, o.z, 'Faster sparks', C.glow); }
+        else if (o.reward === 'dmg') { S.dmg *= 1.35; say(o.x, o.z, 'Brighter sparks', C.glow); }
+        else { gainBees(o.n); say(o.x, o.z, `+${o.n} fireflies`, C.good); }
+      }
+    } else if (o.t === 'gate') {
+      if (o.op === 'add') {
+        o.charge++;
+        if (o.charge >= 8 && (o.gain || 0) < 12) { o.charge = 0; o.v++; o.gain = (o.gain || 0) + 1; o.pop = 0.15; }
+      }
+    } else if (o.t === 'boss') {
+      o.hp -= b.d; o.hurt = 0.08;
+      if (o.hp <= 0) {
+        o.dead = true;
+        for (let i = 0; i < 5; i++) burst(o.x + rnd(-0.3, 0.3), o.z, i % 2 ? 'amber' : 'pink', 22);
+        S.objs.forEach(q => { if (q.t === 'moth') { q.dead = true; burst(q.x, q.z, 'pink', 4); } });
+        endLevel(true);
+      }
+    }
+  }
+
+  function overlaps(o, x) {
+    if (o.t === 'moth') return Math.abs(o.x - x) < 0.1;
+    if (o.t === 'lantern') return Math.abs(o.x - x) < 0.2;
+    if (o.t === 'gate') return x >= o.x0 && x <= o.x1;
+    return Math.abs(o.x - x) < 0.5;
+  }
+
+  function update(dt) {
+    S.time += dt;
+    const playing = S.mode === 'play';
+    const bossNear = S.boss && !S.boss.dead && S.boss.z <= 38;
+    S.scroll += (playing ? (bossNear ? 2.2 : SPEED) : 3) * dt;
+    S.flash = Math.max(0, S.flash - dt);
+
+    const r = squadR();
+    const lim = 1 - r * 0.7;
+    S.tx = Math.max(-lim, Math.min(lim, S.tx));
+    S.px += (S.tx - S.px) * Math.min(1, dt * 14);
+
+    for (const p of S.parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 220 * dt; p.life -= dt; }
+    S.parts = S.parts.filter(p => p.life > 0);
+    for (const t of S.texts) { t.t += dt; t.z -= SPEED * dt * 0.4; }
+    S.texts = S.texts.filter(t => t.t < 1.3);
+    if (!playing) { S.bullets.length = 0; return; }
+
+    // Fire: total damage scales with the swarm; visible sparks are capped.
+    const perSec = S.count * 1.5 * S.rate;
+    const sps = Math.min(26, perSec);
+    const bd = (perSec * S.dmg) / sps;
+    S.shotAcc += sps * dt;
+    while (S.shotAcc >= 1) {
+      S.shotAcc--;
+      const a = rnd(0, 6.283), q = r * Math.sqrt(Math.random());
+      S.bullets.push({ x: S.px + Math.cos(a) * q, z: 0.6, d: bd });
+    }
+
+    // Move the world toward the swarm.
+    const boss = S.boss;
+    for (const o of S.objs) {
+      if (o.dead) continue;
+      if (o.t === 'boss') {
+        o.z -= (o.z > 38 ? SPEED : 2.2) * dt;
+        o.ph += dt; o.hurt = Math.max(0, (o.hurt || 0) - dt);
+        o.x = Math.sin(o.ph * 0.9) * 0.3;
+        if (o.z <= 38) {
+          o.spawn -= dt;
+          if (o.spawn <= 0) {
+            o.spawn = 2.6;
+            const n = 3 + S.level;
+            for (let i = 0; i < n; i++) S.objs.push({ t: 'moth', hp: 1 + Math.floor((S.level - 1) / 3), ph: rnd(0, 6), x: o.x + rnd(-0.5, 0.5), z: o.z - 1 - rnd(0, 2), fast: true });
+          }
+        }
+        if (o.z <= 1.6) {
+          o.z = 1.6;
+          S.drain += dt * (6 + S.count * 0.5);
+          const n = Math.floor(S.drain);
+          if (n > 0) { S.drain -= n; loseBees(n); }
+        }
+        continue;
+      }
+      const was = o.z;
+      o.z -= (SPEED + (o.t === 'moth' ? (o.fast ? 1 : 2.5) : 0)) * dt * ((bossNear && !o.fast && o.t !== 'moth') ? 0.26 : 1);
+      if (o.pop) o.pop = Math.max(0, o.pop - dt);
+      if (o.t === 'moth') {
+        if (o.z < 26) o.x += Math.sign(S.px - o.x) * Math.min(Math.abs(S.px - o.x), 0.22 * dt);
+        if (o.z <= 0.4 && Math.abs(o.x - S.px) < r + 0.1) { o.dead = true; burst(o.x, 0.4, 'pink', 6); loseBees(1); }
+      } else if (was > 0 && o.z <= 0) {
+        if (o.t === 'gate' && S.px >= o.x0 && S.px <= o.x1) {
+          o.dead = true;
+          if (o.op === 'mul') { const g = Math.min(999, S.count * o.v) - S.count; gainBees(g); say(S.px, 1, `×${o.v}`, C.good); }
+          else if (o.v >= 0) { gainBees(o.v); say(S.px, 1, `+${o.v}`, C.good); }
+          else { say(S.px, 1, `−${-o.v}`, C.bad); loseBees(-o.v); }
+          if (o.op === 'mul' || o.v > 0) burst(S.px, 0, 'teal', 14);
+        } else if (o.t === 'lantern' && Math.abs(S.px - o.x) < 0.2 + r * 0.8) {
+          o.dead = true; burst(o.x, 0, 'pink', 16);
+          const n = Math.min(S.count, 4 + S.level);
+          say(S.px, 1, `−${n}`, C.bad); loseBees(n);
+        }
+      }
+      if (o.z < -2.2) o.dead = true;
+    }
+    if (S.mode !== 'play') return;
+
+    // Sparks.
+    for (const b of S.bullets) {
+      const pz = b.z; b.z += 60 * dt;
+      let target = null;
+      for (const o of S.objs) {
+        if (o.dead || o.z > RANGE || o.z < pz - 0.6 || o.z > b.z + 0.6) continue;
+        if (overlaps(o, b.x) && (!target || o.z < target.z)) target = o;
+      }
+      if (target) { hit(target, b); b.dead = true; }
+      else if (b.z > RANGE) b.dead = true;
+    }
+    S.bullets = S.bullets.filter(b => !b.dead);
+    S.objs = S.objs.filter(o => !o.dead);
+  }
+
+  // ---------- drawing ----------
+  function rr(x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  const spr = (img, x, y, size) => ctx.drawImage(img, x - size / 2, y - size / 2, size, size);
+
+  function drawBackdrop() {
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#0e0a22'); g.addColorStop(0.2, '#2a1f55'); g.addColorStop(0.21, '#191238'); g.addColorStop(1, '#120d28');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    for (const s of stars) {
+      ctx.globalAlpha = 0.45 + 0.4 * Math.sin(S.time * 1.5 + s.p);
+      ctx.fillStyle = C.ink; ctx.beginPath(); ctx.arc(s.x * W, s.y * H * 0.55, s.r, 0, 6.283); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    // moon
+    ctx.fillStyle = '#fff3c9'; ctx.beginPath(); ctx.arc(W * 0.8, H * 0.07, W * 0.045, 0, 6.283); ctx.fill();
+    ctx.fillStyle = '#0e0a22'; ctx.beginPath(); ctx.arc(W * 0.8 + W * 0.02, H * 0.063, W * 0.04, 0, 6.283); ctx.fill();
+    // hills
+    ctx.fillStyle = '#191238'; ctx.beginPath(); ctx.moveTo(0, H * 0.21);
+    for (let i = 0; i <= 10; i++) ctx.lineTo(W * i / 10, H * (0.2 - 0.035 * Math.abs(Math.sin(i * 1.7 + 0.6))));
+    ctx.lineTo(W, H * 0.22); ctx.lineTo(0, H * 0.22); ctx.fill();
+
+    // path
+    const a = proj(-1, -3.6), b = proj(1, -3.6), c = proj(1, FAR + 30), d = proj(-1, FAR + 30);
+    const pg = ctx.createLinearGradient(0, c.y, 0, H);
+    pg.addColorStop(0, '#231a4a'); pg.addColorStop(1, '#43357f');
+    ctx.fillStyle = pg; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.lineTo(d.x, d.y); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,197,61,0.5)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(d.x, d.y); ctx.moveTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.stroke();
+    // centre dashes and roadside lights give the sense of speed
+    const off = S.scroll % 6;
+    ctx.fillStyle = 'rgba(246,240,255,0.2)';
+    for (let k = 0; k < 15; k++) {
+      const z0 = k * 6 - off - 2, z1 = z0 + 2.2;
+      if (z1 < -2.5) continue;
+      const p0 = proj(0, Math.max(z0, -3.4)), p1 = proj(0, z1);
+      const w0 = 0.02 * U * p0.s, w1 = 0.02 * U * p1.s;
+      ctx.beginPath(); ctx.moveTo(p0.x - w0, p0.y); ctx.lineTo(p0.x + w0, p0.y); ctx.lineTo(p1.x + w1, p1.y); ctx.lineTo(p1.x - w1, p1.y); ctx.fill();
+    }
+    const idx = Math.floor(S.scroll / 6);
+    for (let k = 14; k >= 0; k--) {
+      const z = k * 6 - off + 1;
+      for (const side of [-1, 1]) {
+        const p = proj(side * 1.2, z);
+        ctx.globalAlpha = Math.min(1, (FAR - z) / 14);
+        spr(((k + idx) % 2 === 0) ? SPR.teal : SPR.amber, p.x, p.y - 6 * p.s, 26 * p.s * U / 160);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawMoth(o, p, size, boss) {
+    const flap = 0.55 + 0.45 * Math.sin(S.time * (boss ? 7 : 15) + (o.ph || 0));
+    const y = p.y - size * 0.9;
+    ctx.fillStyle = boss ? (o.hurt > 0 ? '#ffd0d6' : '#7d2a66') : '#a8325f';
+    for (const sgn of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(p.x, y);
+      ctx.quadraticCurveTo(p.x + sgn * size * 1.3 * flap, y - size * 1.1, p.x + sgn * size * 1.25 * flap, y + size * 0.1);
+      ctx.quadraticCurveTo(p.x + sgn * size * 0.9 * flap, y + size * 0.9, p.x, y + size * 0.35);
+      ctx.fill();
+    }
+    ctx.fillStyle = boss ? '#2a1238' : '#3a1430';
+    ctx.beginPath(); ctx.ellipse(p.x, y + size * 0.1, size * 0.22, size * 0.6, 0, 0, 6.283); ctx.fill();
+    ctx.fillStyle = C.bad;
+    ctx.beginPath(); ctx.arc(p.x - size * 0.11, y - size * 0.25, size * 0.08, 0, 6.283); ctx.arc(p.x + size * 0.11, y - size * 0.25, size * 0.08, 0, 6.283); ctx.fill();
+  }
+
+  function drawObj(o) {
+    if (o.z > FAR) return;
+    ctx.globalAlpha = Math.max(0, Math.min(1, (FAR - o.z) / 10));
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    if (o.t === 'moth') {
+      const p = proj(o.x, o.z); drawMoth(o, p, 0.085 * U * p.s, false);
+    } else if (o.t === 'gate') {
+      const l = proj(o.x0, o.z), r = proj(o.x1, o.z);
+      const pad = 0.03 * U * l.s, h = 0.6 * U * l.s * (1 + (o.pop || 0) * 1.5);
+      const good = o.op === 'mul' || o.v >= 0;
+      const x = l.x + pad, w = r.x - l.x - pad * 2, y = l.y - h;
+      ctx.fillStyle = good ? 'rgba(63,224,184,0.3)' : 'rgba(255,93,115,0.32)';
+      rr(x, y, w, h, 10 * l.s); ctx.fill();
+      ctx.strokeStyle = good ? C.good : C.bad; ctx.lineWidth = Math.max(1, 3 * l.s); ctx.stroke();
+      ctx.fillStyle = C.ink; ctx.font = font(h * 0.62);
+      const label = o.op === 'mul' ? `×${o.v}` : (o.v >= 0 ? `+${o.v}` : `−${-o.v}`);
+      ctx.fillText(label, x + w / 2, y + h * 0.54);
+    } else if (o.t === 'lantern') {
+      const p = proj(o.x, o.z);
+      const w = 0.34 * U * p.s, h = w * 1.25, x = p.x - w / 2, y = p.y - h;
+      const lit = 1 - o.hp / o.max;
+      spr(SPR.amber, p.x, y + h / 2, w * (1.2 + lit * 2.2));
+      ctx.fillStyle = '#2b2158'; rr(x, y, w, h, w * 0.3); ctx.fill();
+      ctx.fillStyle = `rgba(255,197,61,${0.15 + lit * 0.75})`; rr(x, y, w, h, w * 0.3); ctx.fill();
+      ctx.strokeStyle = C.glow; ctx.lineWidth = Math.max(1, 3 * p.s); ctx.stroke();
+      ctx.fillStyle = '#7a5a12'; ctx.fillRect(p.x - w * 0.28, y - h * 0.08, w * 0.56, h * 0.1);
+      ctx.fillStyle = C.ink; ctx.font = font(w * 0.5);
+      ctx.fillText(String(Math.max(1, Math.ceil(o.hp))), p.x, y + h * 0.56);
+      const tag = o.reward === 'rate' ? 'Faster' : o.reward === 'dmg' ? 'Brighter' : `+${o.n}`;
+      ctx.font = font(w * 0.3, 600); ctx.fillStyle = C.glow;
+      ctx.fillText(tag, p.x, y - h * 0.3);
+    } else if (o.t === 'boss') {
+      const p = proj(o.x, o.z);
+      const size = 0.42 * U * p.s;
+      spr(SPR.pink, p.x, p.y - size, size * 5);
+      drawMoth(o, p, size, true);
+      const bw = size * 2.4, bx = p.x - bw / 2, bY = p.y - size * 2.6, bh = Math.max(5, size * 0.28);
+      ctx.fillStyle = 'rgba(20,15,43,0.8)'; rr(bx, bY, bw, bh, bh / 2); ctx.fill();
+      ctx.fillStyle = C.bad; rr(bx, bY, Math.max(bh, bw * Math.max(0, o.hp) / o.max), bh, bh / 2); ctx.fill();
+      ctx.fillStyle = C.ink; ctx.font = font(bh * 1.5);
+      ctx.fillText(String(Math.max(0, Math.ceil(o.hp))), p.x, bY - bh * 1.1);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawSwarm() {
+    if (S.count <= 0) return;
+    const r = squadR(), n = Math.min(S.count, 60);
+    const sz = 30 * U / 160;
+    for (let i = 0; i < n; i++) {
+      const q = r * Math.sqrt((i + 0.5) / n), a = i * 2.39996 + S.time * 0.6;
+      const wob = Math.sin(S.time * 5 + i * 1.7) * 0.012;
+      const p = proj(S.px + Math.cos(a) * q + wob, Math.sin(a) * q * 3.4);
+      spr(SPR.amber, p.x, p.y - 14 * p.s + Math.sin(S.time * 7 + i) * 2, sz * p.s);
+    }
+    const p = proj(S.px, 0);
+    const label = String(S.count);
+    ctx.font = font(20 * U / 160);
+    const tw = ctx.measureText(label).width + 20, th = 26 * U / 160;
+    const ly = p.y - (r * 3.4 * (by - hy) * K) - 42 * U / 160;
+    ctx.fillStyle = S.flash > 0 ? C.bad : C.glow; rr(p.x - tw / 2, ly - th / 2, tw, th, th / 2); ctx.fill();
+    ctx.fillStyle = C.night; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, p.x, ly + th * 0.06);
+  }
+
+  function drawHud() {
+    if (S.mode === 'menu') return;
+    const pad = 14, bw = W - pad * 2, bh = 8, y = 16;
+    ctx.textBaseline = 'middle';
+    ctx.font = font(17); ctx.fillStyle = C.ink; ctx.textAlign = 'left';
+    ctx.fillText(`Night ${S.level}`, pad, y);
+    ctx.textAlign = 'right'; ctx.font = font(13, 600); ctx.fillStyle = '#b9add9';
+    ctx.fillText(`Speed ×${S.rate.toFixed(1)}   Power ×${S.dmg.toFixed(1)}`, W - pad, y);
+    const boss = S.boss;
+    const prog = boss ? Math.max(0, Math.min(1, (S.bossStart - boss.z) / (S.bossStart - 38))) : 1;
+    ctx.fillStyle = 'rgba(246,240,255,0.15)'; rr(pad, y + 16, bw, bh, 4); ctx.fill();
+    ctx.fillStyle = C.glow; rr(pad, y + 16, Math.max(bh, bw * prog), bh, 4); ctx.fill();
+    spr(SPR.pink, pad + bw - 2, y + 20, 22);
+  }
+
+  function draw() {
+    drawBackdrop();
+    const list = S.objs.filter(o => o.z <= FAR).sort((a, b) => b.z - a.z);
+    for (const o of list) if (o.z >= 0) drawObj(o);
+    for (const b of S.bullets) {
+      const p = proj(b.x, b.z);
+      spr(SPR.amber, p.x, p.y - 12 * p.s, 16 * p.s * U / 160);
+    }
+    drawSwarm();
+    for (const o of list) if (o.z < 0) drawObj(o);
+    for (const p of S.parts) {
+      ctx.globalAlpha = Math.min(1, p.life * 3);
+      spr(SPR[p.color], p.x, p.y, 12);
+    }
+    ctx.globalAlpha = 1;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const t of S.texts) {
+      const p = proj(t.x, t.z);
+      ctx.globalAlpha = Math.max(0, 1 - t.t / 1.3);
+      ctx.font = font(26 * U / 160);
+      ctx.lineWidth = 4; ctx.strokeStyle = C.night;
+      const y = p.y - 70 * U / 160 - t.t * 50;
+      ctx.strokeText(t.txt, p.x, y); ctx.fillStyle = t.color; ctx.fillText(t.txt, p.x, y);
+    }
+    ctx.globalAlpha = 1;
+    drawHud();
+  }
+
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.033, (now - last) / 1000); last = now;
+    update(dt); draw();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // ---------- input ----------
+  function steer(e) {
+    const r = stage.getBoundingClientRect();
+    S.tx = (e.clientX - r.left - W / 2) / U;
+  }
+  stage.addEventListener('pointerdown', e => { if (S.mode === 'play') { steer(e); e.preventDefault(); } });
+  stage.addEventListener('pointermove', e => { if (S.mode === 'play') steer(e); });
+  const keys = {};
+  addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft' || e.key === 'a') keys.l = true;
+    if (e.key === 'ArrowRight' || e.key === 'd') keys.r = true;
+  });
+  addEventListener('keyup', e => {
+    if (e.key === 'ArrowLeft' || e.key === 'a') keys.l = false;
+    if (e.key === 'ArrowRight' || e.key === 'd') keys.r = false;
+  });
+  setInterval(() => { if (S.mode === 'play') S.tx += ((keys.r ? 1 : 0) - (keys.l ? 1 : 0)) * 0.045; }, 16);
+
+  $('playBtn').addEventListener('click', () => startLevel(1));
+  $('nextBtn').addEventListener('click', () => startLevel(S.level + 1));
+  $('retryBtn').addEventListener('click', () => startLevel(S.level));
+  window.__glow = S;
+})();
+</script>
